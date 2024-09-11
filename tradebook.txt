@@ -1,0 +1,7 @@
+{
+ "operation": "buy",
+ "ticker": "S13D4",
+ "quantity": "14319",
+ "price": "112.569",
+ "term": "24",
+ "currency": 
