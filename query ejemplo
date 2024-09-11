@@ -1,0 +1,36 @@
+with pase as (
+            with CI as(
+            select short_ticker, volumen_compra, precio_compra, timestamp, count as count_CI
+            from precios
+            where short_ticker in ('IRSA','DIP0','TVPP','PARP','CUAP','DICP','TO26','T4X4','T5X4','T2X5','TC25P',
+			'TX25','TX26','TX28','TZX25','TZX26','TZX27','TZX28','TZXD5','TZXD6','TZXD7','TZV25','TV25',
+			'S13S4','S30S4','S14O4','S29N4','S17E5','S13D4','S31E5','S28F5','S31M5')
+            and term = 'CI' 
+            and currency = 'ARS' 
+            and precio_compra is not null 
+            and timestamp > '2024-09-04'
+            ),
+            hs as (
+            select short_ticker, volumen_venta, precio_venta, count as count_24
+            from precios
+            where short_ticker in ('IRSA','DIP0','TVPP','PARP','CUAP','DICP','TO26','T4X4','T5X4','T2X5','TC25P',
+			'TX25','TX26','TX28','TZX25','TZX26','TZX27','TZX28','TZXD5','TZXD6','TZXD7','TZV25','TV25',
+			'S13S4','S30S4','S14O4','S29N4','S17E5','S13D4','S31E5','S28F5','S31M5')
+            and term = '24hs' 
+            and currency = 'ARS' 
+            and precio_venta is not null
+            and timestamp > '2024-09-04'
+            )
+            select CASE 
+                    WHEN (CI.precio_compra !=0 AND hs.precio_venta !=0) 
+                    THEN CI.precio_compra / hs.precio_venta 
+                    ELSE 0
+                END AS ratio,
+                CI.*,hs.*
+            from CI 
+            inner join hs on CI.count_CI=hs.count_24 and CI.short_ticker=hs.short_ticker
+            )
+            select *
+            from pase 
+            where ratio>=1.01-- and short_ticker='IRSA'
+            order by timestamp desc
