@@ -29,6 +29,8 @@ import asyncio
 import ast
 import traceback
 import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 class TradingHelper:
     _app_instance=None
@@ -327,6 +329,62 @@ class TradingHelper:
             app= self.get_cocos_app_instance(mail=mail)
         response=app.get_instrument_snapshot(ticker=ticker, segment=app.segments.DEFAULT)
         return response
+    
+    def get_cocos_simul_prices(self, mail, tickers=None, box_position=0):
+        app = self.get_cocos_app_instance(mail=mail)
+        count = self.latest_count()
+        
+        # Leer los tickers de un archivo si no se pasan como parámetro
+        if tickers is None:
+            with open('tickers.txt', 'r') as file:
+                tickers = file.read()
+                tickers = ast.literal_eval(tickers.strip())
+                print(len(tickers))
+
+        # Especificar los nombres de las columnas basándose en las claves del diccionario
+        columnas = ["short_ticker", "currency", "term", "bid_size", "bid_price", "ask_size", "ask_price", "count"]
+
+        def fetch_and_store_data(ticker):
+            """Función para obtener datos de la API y guardarlos en la base de datos."""
+            try:
+                response = app.get_instrument_snapshot(ticker=ticker, segment=app.segments.DEFAULT)
+                extracted_data = []
+                for element in response:
+                    # Desarmar precios y volúmenes de compra y venta para que queden cada uno en su columna
+                    extracted_item = {
+                        **element,
+                        'bid_size': element['bids'][box_position]['size'] if element['bids'] else None,
+                        'bid_price': element['bids'][box_position]['price'] if element['bids'] else None,
+                        'ask_price': element['asks'][box_position]['price'] if element['asks'] else None,
+                        'ask_size': element['asks'][box_position]['size'] if element['asks'] else None
+                    }
+                    extracted_item = {columna: extracted_item[columna] for columna in columnas if columna in extracted_item}
+                    now = dt.now()
+                    extracted_item.update({"timestamp": now.strftime("%Y/%m/%d %H:%M:%S.%f"), "count": count})
+                    extracted_data.append(extracted_item)
+                
+                # Guardar los datos en la base de datos
+                self.write_to_db(extracted_data)
+            except Exception as e:
+                print(f"ERROR {ticker}")
+                if "Error code: 401" in str(e):
+                    print("401")
+                    app._refresh_access_token()
+                logging.error(f"ERROR {ticker}: {str(e)}")
+
+        # Ejecutar las solicitudes en paralelo utilizando ThreadPoolExecutor
+        while True:
+            hora_actual = dt.now().hour
+            if 11 <= hora_actual < 17:
+                with ThreadPoolExecutor(max_workers=2) as executor:  # Puedes ajustar max_workers según la cantidad de concurrencia deseada
+                    futures = {executor.submit(fetch_and_store_data, ticker): ticker for ticker in tickers}
+                    for future in as_completed(futures):
+                        ticker = futures[future]
+                        try:
+                            future.result()  # Esto lanzará una excepción si ocurrió un error en el hilo
+                        except Exception as e:
+                            print(f"Error processing {ticker}: {e}")
+                count += 1
 
     def get_cocos_prices(self,mail,tickers=None,box_position=0):
         app = self.get_cocos_app_instance(mail=mail)
@@ -392,9 +450,12 @@ class TradingHelper:
         elif term == "24": settlement = app.settlements.T1
         if currency == "pesos": currency=app.currencies.PESOS
         elif currency == "dolares": currency=app.currencies.USD
-        try: long_ticker = app.long_ticker(ticker=ticker, 
+        try:
+            app = self.get_cocos_app_instance(mail=mail) 
+            long_ticker = app.long_ticker(ticker=ticker, 
                                         settlement=settlement, 
                                         currency=currency)
+            stocks_available=app.stocks_available(long_ticker)
         except Exception as e:
             if "Error code: 401" in str(e):
                 print("401")
@@ -403,9 +464,33 @@ class TradingHelper:
                 long_ticker = app.long_ticker(ticker=ticker, 
                                         settlement=settlement, 
                                         currency=currency)
-        stocks_available=app.stocks_available(long_ticker)
-        #print(stocks_available)
+                stocks_available=app.stocks_available(long_ticker)
+        
         return stocks_available
+
+    def calculate_daily_rate(self,max_ratio=1.004,min_ratio=1.001,hora_negociacion=15):
+        now = dt.now()
+        
+        # Definir los tiempos límite
+        time_1500 = now.replace(hour=hora_negociacion, minute=0, second=0, microsecond=0)
+        time_1630 = now.replace(hour=16, minute=30, second=0, microsecond=0)
+        
+        # Caso 1: Antes de las 15:00, y = 1.004
+        if now < time_1500:
+            return max_ratio
+        
+        # Caso 2: Entre las 15:00 y 16:30, y desciende linealmente
+        elif time_1500 <= now <= time_1630:
+            # Tiempo transcurrido desde las 15:00
+            elapsed_time = (now - time_1500).total_seconds()
+            # Duración total del descenso (90 minutos = 5400 segundos)
+            total_time = (time_1630 - time_1500).total_seconds()
+            # Cálculo de y según el descenso lineal
+            return max_ratio - ((max_ratio-min_ratio) * (elapsed_time / total_time))
+        
+        # Caso 3: Después de las 16:30, y = 1.001
+        else:
+            return min_ratio
 
     def remove_d_from_ticker(self,ticker_time):
         """
