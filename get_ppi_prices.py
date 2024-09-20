@@ -3,4 +3,4 @@ import sqlite3
 import threading
 
 app=TradingHelper()
-app.get_ppi_prices()
+app.get_simul_ppi_prices()

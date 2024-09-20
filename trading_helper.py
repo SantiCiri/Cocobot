@@ -89,14 +89,15 @@ class TradingHelper:
         conn.close()
         return last_count
 
-    def write_to_db(self,extracted_data):
-        #Renombra bid y ask por precio compra y venta
-        extracted_data = [{"precio_compra" if key == "bid_price" 
-                           else "precio_venta" if key == "ask_price" 
-                           else "volumen_venta" if key == "ask_size" 
-                           else "volumen_compra" if key == "bid_size" 
-                           else key: value for key, value in item.items()} for item in extracted_data]
-        
+    def write_to_db(self,extracted_data,origin="cocos"):
+        if origin=="cocos":
+            #Renombra bid y ask por precio compra y venta
+            extracted_data = [{"precio_compra" if key == "bid_price" 
+                            else "precio_venta" if key == "ask_price" 
+                            else "volumen_venta" if key == "ask_size" 
+                            else "volumen_compra" if key == "bid_size" 
+                            else key: value for key, value in item.items()} for item in extracted_data]
+        else:pass
         # Conectar a la nueva base de datos Prices
         conn = psycopg2.connect(
             dbname="prices",
@@ -104,11 +105,13 @@ class TradingHelper:
             password=os.getenv('CLAVE_POSGRES'),
             host="127.0.0.1"#"/var/run/postgresql"  # Usar Unix domain socket en lugar de host y puerto
         )
-
+        
         # Crear un cursor
         cursor = conn.cursor()
-
+        #Puede que la variable extracted data sea un diccionario o una lista de diccionarios. en cualquier caso aca se convierte siempre a una lista
+        if isinstance(extracted_data, dict): extracted_data = [extracted_data]
         # Iterar sobre la lista de diccionarios y agregar cada elemento a la base de datos
+
         for row in extracted_data:
             cursor.execute("""
                             INSERT INTO precios (short_ticker, currency, term, volumen_venta, precio_venta, volumen_compra, precio_compra, timestamp,count)
@@ -142,7 +145,6 @@ class TradingHelper:
         # Filter the list for the proper currency and select the first matching account
         account = [account for account in accounts if account['currency'] == currency.upper()][0]
         cbu_cvu = account["cbu_cvu"]  # Extract the CBU/CVU from the account information
-
         funds = app.funds_available()  # Get the available funds
         amount = funds["CI"][currency]  # Extract the amount available in the "CI" for the specified currency
 
@@ -152,98 +154,117 @@ class TradingHelper:
         elif currency == "ars":
             app.withdraw_funds(currency=app.currencies.PESOS, amount=amount, cbu_cvu=cbu_cvu)
     
-    def fetch_book(self,ppi, instrument, term):
-        current_book = ppi.marketdata.book(instrument["ticker"], instrument["type"], term)
-        try: 
-            timestamp = dt.strptime(current_book["date"], '%Y-%m-%dT%H:%M:%S.%f%z').strftime("%d/%m/%y %H:%M:%S.%f")
-        except:
-            return []
-
-        if term == "INMEDIATA":
-            plazo = "CI"
-        elif term == "A-24HS":
-            plazo = "24hs"
-        elif term == "A-48HS":
-            plazo = "48hs"
-
-        if len(current_book['bids']) > 0:
-            sell_price = current_book['bids'][0]['price']
-            sell_quantity = current_book['bids'][0]['quantity']
-        else:
-            sell_price = 0
-            sell_quantity = 0
-
-        if len(current_book['offers']) > 0:
-            buy_price = current_book['offers'][0]['price']
-            buy_quantity = current_book['offers'][0]['quantity']
-        else:
-            buy_price = 0
-            buy_quantity = 0
-
-        if instrument["currency"] == "Pesos":
-            currency = "ARS"
-        elif instrument["currency"] == "Dolares billete | MEP":
-            currency = "USD"
-        else: 
-            c=instrument["currency"]
-            print(f"currency fantasma: {c}")
-
-        now=dt.now()
-
-        min_extracted_data = [{
-            "short_ticker": instrument["ticker"],
-            "currency": currency,
-            "term": plazo,
-            "bid_size": sell_quantity,
-            "bid_price": sell_price,
-            "ask_size": buy_quantity,
-            "ask_price": buy_price,
-            "timestamp":now.strftime("%d/%m/%y %H:%M:%S.%f")
-        }]
-        return min_extracted_data
-    
-    def get_ppi_prices(self):
+    def get_ppi_prices(self,tickers=None):
         ppi=self.get_ppi_app_instance()
-        print("Searching instruments")
-        instruments=[]
-        for letter in ["AL30"]:
-                a = ppi.marketdata.search_instrument(letter, "", "","BONOS")
-                print(a)
-                instruments=instruments+a
-        #remove duplicates
-        instruments=[x for i, x in enumerate(instruments) if instruments.index(x) == i]
+        count=0
+        with open('ppi_instruments.txt', 'r') as file:
+            instruments = file.read()
+            instruments = ast.literal_eval(instruments)
+        # Search Current Book
+        print("Searching Current Book")
+        while 11 <= dt.now().hour <24:
+            for instrument in instruments:
+                if instrument["type"]=="OBLIGACIONES-NEGOCIABLES":instrument["type"]="ON"
+                for term in ["INMEDIATA", "A-24HS"]:
+                  try:
+                    #print({instrument["ticker"], instrument["type"],term})
+                    response=ppi.marketdata.book(instrument["ticker"],instrument["type"],term)
+                    #print(response)
+                    if len (response["offers"])==0:break
+                    timestamp=response["date"][:10] + ' ' + response["date"][11:22]
+                    if not timestamp[-1].isdigit():
+                        # Reemplazar el último carácter con '5'
+                        timestamp = timestamp[:-1] + '5'
+                    precio_venta=response["offers"][0]["price"]
+                    volumen_venta=response["offers"][0]["quantity"]
+                    precio_compra=response["bids"][0]["price"]
+                    volumen_compra=response["bids"][0]["quantity"]
+                    if instrument["currency"]=='Pesos':currency="ARS"
+                    elif instrument["currency"]=='Dolares billete | MEP':currency="USD"
+                    if term=="INMEDIATA":term="CI",
+                    elif term=="A-24HS":term="24hs"
+                    currency=currency
+                    row={"short_ticker":instrument["ticker"],
+                        "currency":currency,
+                        "term":term,
+                        "volumen_venta":volumen_venta,
+                        "precio_venta":precio_venta,
+                        "volumen_compra":volumen_compra,
+                        "precio_compra":precio_compra,
+                        "timestamp":timestamp,
+                        "count":count
+                        }
+                    
+                    self.write_to_db(row,origin="ppi")
+                  except Exception as e:
+                    print(e)
+                    print(instrument,response)
+                    pass
+            count=count+1
 
-        # Convert list of dictionaries to JSON string
-        json_string = json.dumps(instruments)
-        print(json_string)
-        # Write JSON string to a .txt file
-        with open("instruments.txt", "w") as file:
-            file.write(json_string)
-        #remover el CCL
-        instruments = [d for d in instruments if all("Dolares divisa | CCL" not in value for value in d.values())]
-        terms=["A-48HS", "INMEDIATA", "A-24HS"]
+    def get_simul_ppi_prices(self, tickers=None):
+        def process_instrument(instrument, term, count):
+            ppi = self.get_ppi_app_instance()
+            try:
+                response = ppi.marketdata.book(instrument["ticker"], instrument["type"], term)
+                if len(response["offers"]) == 0:
+                    return None
+                timestamp = response["date"][:10] + ' ' + response["date"][11:22]
+                if not timestamp[-1].isdigit():
+                    timestamp = timestamp[:-1] + '5'
+                precio_venta = response["offers"][0]["price"]
+                volumen_venta = response["offers"][0]["quantity"]
+                precio_compra = response["bids"][0]["price"]
+                volumen_compra = response["bids"][0]["quantity"]
+                currency = "ARS" if instrument["currency"] == 'Pesos' else "USD"
+                term = "CI" if term == "INMEDIATA" else "24hs"
+                row = {
+                    "short_ticker": instrument["ticker"],
+                    "currency": currency,
+                    "term": term,
+                    "volumen_venta": volumen_venta,
+                    "precio_venta": precio_venta,
+                    "volumen_compra": volumen_compra,
+                    "precio_compra": precio_compra,
+                    "timestamp": timestamp,
+                    "count": count
+                }
+                self.write_to_db(row, origin="ppi")
+            except Exception as e:
+                print(e)
+                print(instrument, response)
+        
+        # Load instruments from file
+        with open('ppi_instruments.txt', 'r') as file:
+            instruments = ast.literal_eval(file.read())
+
+        # Update instrument type
+        for instrument in instruments:
+            if instrument["type"] == "OBLIGACIONES-NEGOCIABLES":
+                instrument["type"] = "ON"
 
         # Search Current Book
         print("Searching Current Book")
-        while True:
-            hora_actual=dt.now().hour            
-            if 11<= hora_actual<=17:
-                with concurrent.futures.ProcessPoolExecutor() as executor:
-                    for instrument in instruments:
-                        try:
-                            a=executor.submit(self.fetch_book,ppi,instrument,terms[0])
-                            b=executor.submit(self.fetch_book,ppi,instrument,terms[1])
-                            c=executor.submit(self.fetch_book,ppi,instrument,terms[2])
-                            print(a.result()+b.result()+c.result())
-                            self.write_to_db(a.result()+b.result()+c.result(),"prices_ppi.db")
-                        except:pass
+        count = 0
+
+        while 11 <= dt.now().hour < 24:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                futures = []
+                for instrument in instruments:
+                    for term in ["INMEDIATA", "A-24HS"]:
+                        futures.append(executor.submit(process_instrument, instrument, term, count))
+                # Wait for all futures to complete
+                for future in concurrent.futures.as_completed(futures):
+                    future.result()  # To catch any exceptions that occurred
+
+            count += 1
 
     def place_buy_order(self,mail,ticker,quantity,price,term,currency):
         quantity=str(quantity)
         price=str(price)
         app = self.get_cocos_app_instance(mail=mail)
         if term == "CI": settlement = app.settlements.T0
-        elif term == "24": settlement = app.settlements.T1
+        elif term == "24" or term =="24hs": settlement = app.settlements.T1
         if currency == "pesos": currency=app.currencies.PESOS
         elif currency == "dolares": currency=app.currencies.USD
 
@@ -294,7 +315,8 @@ class TradingHelper:
         price=str(price)
         app = self.get_cocos_app_instance(mail=mail)
         if term == "CI": settlement = app.settlements.T0
-        elif term == "24": settlement = app.settlements.T1
+        elif term == "24" or term == "24hs": settlement = app.settlements.T1
+
         if currency == "pesos": currency=app.currencies.PESOS
         elif currency == "dolares": currency=app.currencies.USD
 
@@ -394,9 +416,10 @@ class TradingHelper:
             with open('tickers.txt', 'r') as file: 
                 tickers = file.read()
                 tickers = ast.literal_eval(tickers.strip())
-
+        while dt.now().hour < 11:
+            time.sleep(60)
         # Especificar los nombres de las columnas basándose en las claves del diccionario
-        while True:
+        while 11 <= dt.now().hour < 17:
             hora_actual=dt.now().hour
             if 11 <= hora_actual < 17:
                 for ticker in tickers:
@@ -432,7 +455,15 @@ class TradingHelper:
         {'CI': {'ars': 3233.5, 'usd': 11.72, 'ext': 0}, '24hs': {'ars': 7343.5, 'usd': 11.72, 'ext': 0}, '48hs': {'ars': 7343.5, 'usd': 11.72, 'ext': 0}}
         """
         app = self.get_cocos_app_instance(mail=mail)
-        return app.funds_available()
+        try:
+            funds=app.funds_available()
+            return funds
+        except Exception as e:
+            if "Error code: 401" in str(e):
+                print("401 on funds")
+                app._refresh_access_token()
+                funds=app.funds_available()
+                return funds
     
     def portfolio(self,mail):
         try:
@@ -447,7 +478,7 @@ class TradingHelper:
     def stocks_available(self,mail,ticker,term,currency):
         app = self.get_cocos_app_instance(mail=mail)
         if term == "CI": settlement = app.settlements.T0
-        elif term == "24": settlement = app.settlements.T1
+        elif term == "24" or term == "24hs": settlement = app.settlements.T1
         if currency == "pesos": currency=app.currencies.PESOS
         elif currency == "dolares": currency=app.currencies.USD
         try:
@@ -456,6 +487,7 @@ class TradingHelper:
                                         settlement=settlement, 
                                         currency=currency)
             stocks_available=app.stocks_available(long_ticker)
+            return stocks_available
         except Exception as e:
             if "Error code: 401" in str(e):
                 print("401")
@@ -465,12 +497,10 @@ class TradingHelper:
                                         settlement=settlement, 
                                         currency=currency)
                 stocks_available=app.stocks_available(long_ticker)
-        
-        return stocks_available
+                return stocks_available
 
     def calculate_daily_rate(self,max_ratio=1.004,min_ratio=1.001,hora_negociacion=15):
         now = dt.now()
-        
         # Definir los tiempos límite
         time_1500 = now.replace(hour=hora_negociacion, minute=0, second=0, microsecond=0)
         time_1630 = now.replace(hour=16, minute=30, second=0, microsecond=0)
