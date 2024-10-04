@@ -162,7 +162,8 @@ class TradingHelper:
             instruments = ast.literal_eval(instruments)
         # Search Current Book
         print("Searching Current Book")
-        while 11 <= dt.now().hour <24:
+        while dt.now().hour <11: time.sleep(60)
+        while 11 <= dt.now().hour <17:
             for instrument in instruments:
                 if instrument["type"]=="OBLIGACIONES-NEGOCIABLES":instrument["type"]="ON"
                 for term in ["INMEDIATA", "A-24HS"]:
@@ -171,10 +172,6 @@ class TradingHelper:
                     response=ppi.marketdata.book(instrument["ticker"],instrument["type"],term)
                     #print(response)
                     if len (response["offers"])==0:break
-                    timestamp=response["date"][:10] + ' ' + response["date"][11:22]
-                    if not timestamp[-1].isdigit():
-                        # Reemplazar el último carácter con '5'
-                        timestamp = timestamp[:-1] + '5'
                     precio_venta=response["offers"][0]["price"]
                     volumen_venta=response["offers"][0]["quantity"]
                     precio_compra=response["bids"][0]["price"]
@@ -183,7 +180,7 @@ class TradingHelper:
                     elif instrument["currency"]=='Dolares billete | MEP':currency="USD"
                     if term=="INMEDIATA":term="CI",
                     elif term=="A-24HS":term="24hs"
-                    currency=currency
+                    now = dt.now()
                     row={"short_ticker":instrument["ticker"],
                         "currency":currency,
                         "term":term,
@@ -191,7 +188,7 @@ class TradingHelper:
                         "precio_venta":precio_venta,
                         "volumen_compra":volumen_compra,
                         "precio_compra":precio_compra,
-                        "timestamp":timestamp,
+                        "timestamp":now.strftime("%Y/%m/%d %H:%M:%S.%f"),
                         "count":count
                         }
                     
@@ -481,23 +478,31 @@ class TradingHelper:
         elif term == "24" or term == "24hs": settlement = app.settlements.T1
         if currency == "pesos": currency=app.currencies.PESOS
         elif currency == "dolares": currency=app.currencies.USD
-        try:
-            app = self.get_cocos_app_instance(mail=mail) 
-            long_ticker = app.long_ticker(ticker=ticker, 
-                                        settlement=settlement, 
-                                        currency=currency)
-            stocks_available=app.stocks_available(long_ticker)
-            return stocks_available
-        except Exception as e:
-            if "Error code: 401" in str(e):
-                print("401")
-                app._refresh_access_token()
-                app= self.get_cocos_app_instance(mail=mail)
-                long_ticker = app.long_ticker(ticker=ticker, 
-                                        settlement=settlement, 
-                                        currency=currency)
-                stocks_available=app.stocks_available(long_ticker)
+        attempts=20
+        for attempt in range(attempts):  # Retry up to 3 times
+            try:
+                long_ticker = app.long_ticker(ticker=ticker, settlement=settlement, currency=currency)
+                stocks_available = app.stocks_available(long_ticker)
+                
+                if stocks_available is None:
+                    print(f"Warning: app.stocks_available returned None for {ticker} on attempt {attempt + 1}")
+                    time.sleep(3*(attempt+1))  # Wait before retrying
+                    continue
+                
                 return stocks_available
+            
+            except Exception as e:
+                if "Error code: 401" in str(e):
+                    print("401 error: Refreshing access token")
+                    app._refresh_access_token()
+                    app = self.get_cocos_app_instance(mail=mail)
+                    continue  # Retry after refreshing the token
+                else:
+                    print(f"Error during stocks_available call: {e}")
+                    break  # Exit loop if error is not related to token
+        # If after retries we still got None, handle it
+        print(f"Failed to retrieve stocks_available for {ticker} after {attempts} attempts")
+        return None  # Return None or raise an exception depending on your needs
 
     def calculate_daily_rate(self,max_ratio=1.004,min_ratio=1.001,hora_negociacion=15):
         now = dt.now()
