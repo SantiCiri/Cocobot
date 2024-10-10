@@ -23,7 +23,7 @@ from ppi_client.ppi import PPI
 from ppi_client.models.disclaimer import Disclaimer
 from ppi_client.models.instrument import Instrument
 import logging
-logging.basicConfig(filename='logs.log', level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
+#logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 import concurrent.futures
 import asyncio
 import ast
@@ -35,11 +35,26 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 class TradingHelper:
     _app_instance=None
 
-    def __init__(self,cbu_uss=None,cbu_pesos=None):
+    def __init__(self,log_name="logs",cbu_uss=None,cbu_pesos=None):
         today=dt.today()
         self.today=today.strftime("%d%m%y")
         self.cbu_uss=cbu_uss
         self.cbu_pesos=cbu_pesos
+
+        # Crear un logger específico para esta instancia
+        self.logger = logging.getLogger(log_name)
+        self.logger.setLevel(logging.INFO)
+
+        # Crear un handler para escribir los logs en un archivo específico
+        handler = logging.FileHandler(f'{log_name}.log')
+        handler.setLevel(logging.INFO)
+
+        # Definir el formato del log
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+
+        # Agregar el handler al logger
+        self.logger.addHandler(handler)
     
     @classmethod
     def get_ppi_app_instance(cls,mail=None):

@@ -1,4 +1,6 @@
 .env
 .venv/
 __pycache__/
-logs.log
+*.log
+operar_*.py
+crontab
