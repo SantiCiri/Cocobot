@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime as dt, timedelta
 from dotenv import load_dotenv
 import os
+import socket
 import shutil
 from ppi_client.models.order_budget import OrderBudget
 from ppi_client.models.order_confirm import OrderConfirm
@@ -12,6 +13,7 @@ import plotly.express as px
 import plotly.graph_objs as go
 import sqlite3
 import psycopg2
+import beepy
 from psycopg2 import sql
 import numpy as np
 import string
@@ -30,20 +32,28 @@ import ast
 import traceback
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+import threading
+import requests
 
 class TradingHelper:
     _app_instance=None
+    _last_ip = None
 
     def __init__(self,log_name="logs",cbu_uss=None,cbu_pesos=None):
-        today=dt.today()
-        self.today=today.strftime("%d%m%y")
-        self.cbu_uss=cbu_uss
-        self.cbu_pesos=cbu_pesos
+        self.log_name = log_name
+        self.cbu_uss = cbu_uss
+        self.cbu_pesos = cbu_pesos
+        self.today = dt.today().strftime("%d%m%y")
+        self._setup_logger(log_name)
 
+    def _setup_logger(self, log_name):
         # Crear un logger específico para esta instancia
         self.logger = logging.getLogger(log_name)
         self.logger.setLevel(logging.INFO)
+
+        # Limpiar handlers anteriores (si existen) para evitar duplicados
+        if self.logger.hasHandlers():
+            self.logger.handlers.clear()
 
         # Crear un handler para escribir los logs en un archivo específico
         handler = logging.FileHandler(f'{log_name}.log')
@@ -55,7 +65,7 @@ class TradingHelper:
 
         # Agregar el handler al logger
         self.logger.addHandler(handler)
-    
+
     @classmethod
     def get_ppi_app_instance(cls,mail=None):
         if cls._app_instance is None:
@@ -72,11 +82,22 @@ class TradingHelper:
             # Cargar las variables de entorno desde .env
             load_dotenv()
             cls._app_instance = Cocos(email=mail, 
-                                      password=os.getenv('CLAVE_SECRETA_COCOS'), 
-                                      api_key=None,
-                                      topt_secret_key=os.getenv('topt_secret_key'))
+                                        password=os.getenv('CLAVE_SECRETA_COCOS'), 
+                                        api_key=None,
+                                        topt_secret_key=os.getenv('topt_secret_key'))
         return cls._app_instance
-    
+
+    @staticmethod
+    def _get_current_ip():
+        try:
+            # Obtén la IP pública actual
+            response = requests.get('https://api.ipify.org?format=json')
+            current_ip = response.json()['ip']
+            return current_ip
+        except Exception as e:
+            print(f"Error getting current IP: {e}")
+            return None
+
     def latest_count(self):
         conn = psycopg2.connect(
             dbname="prices",
@@ -103,6 +124,15 @@ class TradingHelper:
         # Cerrar la conexión
         conn.close()
         return last_count
+    
+    def auto_beep(self,sound=4):
+        def play_sound():
+            beepy.beep(sound=sound)
+
+        # Ejecutar el sonido en un hilo separado
+        sound_thread = threading.Thread(target=play_sound)
+        sound_thread.start()
+        #sound_thread.join()
 
     def write_to_db(self,extracted_data,origin="cocos"):
         if origin=="cocos":
@@ -420,7 +450,7 @@ class TradingHelper:
                             print(f"Error processing {ticker}: {e}")
                 count += 1
 
-    def get_cocos_prices(self,mail,tickers=None,box_position=0):
+    def get_cocos_prices(self,mail,tickers=None,box_position=0,timer=None):
         app = self.get_cocos_app_instance(mail=mail)
         count=self.latest_count()
         if tickers==None:
@@ -455,11 +485,12 @@ class TradingHelper:
                         self.write_to_db(extracted_data)
                     except Exception as e:
                         print(f"ERROR {ticker}")
-                        if "Error code: 401" in str(e):
+                        if "Error code: 401" or "Invalid Refresh Token" in str(e):
                             print("401")
                             app._refresh_access_token()
                         logging.error(f"ERROR {ticker}: {str(e)}")
                 count=count+1
+                if timer: time.sleep(timer)
 
     def funds(self,mail):
         """
@@ -477,14 +508,15 @@ class TradingHelper:
                 funds=app.funds_available()
                 return funds
     
-    def portfolio(self,mail):
+    def portfolio(self, mail):
         try:
-            app= self.get_cocos_app_instance(mail=mail)
+            app = self.get_cocos_app_instance(mail=mail)
         except Exception as e:
-            if "Error code: 401" in str(e):
-                print("401")
+            if "MFA_ERROR" in str(e):
+                logging.warning(f"Error {e} en portfolio. Intentando refrescar token y re-instanciar.")
                 app._refresh_access_token()
-                app= self.get_cocos_app_instance(mail=mail)
+                app = self.get_cocos_app_instance(mail=mail)
+            else: raise f"error distinto a MFA en Portfolio: {e}"
         return app.my_portfolio()
     
     def stocks_available(self,mail,ticker,term,currency):
