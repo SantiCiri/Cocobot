@@ -9,7 +9,7 @@ import subprocess
 import glob
 
 #Eliminar todos los archivos que terminen en .log
-[os.remove(f) for f in glob.glob("*.log")]
+#[os.remove(f) for f in glob.glob("*.log")]
 
 logging.basicConfig(filename='logs.log', level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -53,7 +53,7 @@ try:
         logging.info(f'Conectando a Windscribe VPN servidor: {choiceCode}')
 
         processes = []
-        for strategy in ["operar_MR36O_LECHO", "operar_pase","operar_precios_tzxs"]:
+        for strategy in ["operar_MR36O_LECHO","operar_TX26_TX28", "operar_pase","operar_precios","operar_TZX26_TZXM6"]:
             # Construir el comando para ejecutar cada script
             command = f"cd /home/santiago/Desktop/cocos && source .venv/bin/activate && python {strategy}.py"
             # Usar subprocess para ejecutar el comando en un proceso independiente
