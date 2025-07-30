@@ -1,0 +1,7 @@
+58 10 * * 1-5 /bin/bash -c 'cd **/cocos && source .venv/bin/activate && jupyter nbconvert --to script operar_MR36O_LECHO.ipynb >> operar_MR36O_LECHO.log 2>&1'
+58 10 * * 1-5 /bin/bash -c 'cd **/cocos && source .venv/bin/activate && jupyter nbconvert --to script operar_pase.ipynb >> operar_pase.log 2>&1'
+01 11 * * 1-5 /bin/bash -c 'cd **/cocos && source .venv/bin/activate && python operar_MR36O_LECHO.py >> operar_MR36O_LECHO.log 2>&1'
+01 11 * * 1-5 /bin/bash -c 'cd **/cocos && source .venv/bin/activate && python operar_pase.py >> operar_pase.log 2>&1'
+00 11 * * 1-5 /bin/bash -c 'cd **/cocos && source .venv/bin/activate && python get_ppi_prices.py'
+
+

@@ -34,6 +34,18 @@ import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import requests
+import sys
+from functools import wraps
+
+def check_rate_limit(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        response = func(*args, **kwargs)
+        if isinstance(response, requests.Response) and response.status_code == 429:
+            print("Error 429: Too many requests. Stopping execution.")
+            sys.exit()  # Termina el programa inmediatamente
+        return response
+    return wrapper
 
 class TradingHelper:
     _app_instance=None
@@ -45,6 +57,7 @@ class TradingHelper:
         self.cbu_pesos = cbu_pesos
         self.today = dt.today().strftime("%d%m%y")
         self._setup_logger(log_name)
+        self.lock = threading.Lock()
 
     def _setup_logger(self, log_name):
         # Crear un logger específico para esta instancia
@@ -127,7 +140,8 @@ class TradingHelper:
     
     def auto_beep(self,sound=4):
         def play_sound():
-            beepy.beep(sound=sound)
+            with self.lock: #esta linea esta a chequear
+                beepy.beep(sound=sound)
 
         # Ejecutar el sonido en un hilo separado
         sound_thread = threading.Thread(target=play_sound)
@@ -301,6 +315,7 @@ class TradingHelper:
 
             count += 1
 
+    @check_rate_limit
     def place_buy_order(self,mail,ticker,quantity,price,term,currency):
         quantity=str(quantity)
         price=str(price)
@@ -309,15 +324,20 @@ class TradingHelper:
         elif term == "24" or term =="24hs": settlement = app.settlements.T1
         if currency == "pesos": currency=app.currencies.PESOS
         elif currency == "dolares": currency=app.currencies.USD
-
-        long_ticker = app.long_ticker(ticker=ticker, 
+        try:
+            long_ticker = app.long_ticker(ticker=ticker, 
                                     settlement=settlement, 
                                     currency=currency)
-
-        order = app.submit_buy_order(long_ticker=long_ticker, 
+            order = app.submit_buy_order(long_ticker=long_ticker, 
                                      quantity=quantity, 
                                      price=price)
-
+        except:
+            long_ticker = app.long_ticker(ticker=ticker, 
+                                    settlement=settlement, 
+                                    currency=currency)
+            order = app.submit_buy_order(long_ticker=long_ticker, 
+                                     quantity=quantity, 
+                                     price=price)
         # Save to file
         #with open('tradebook.txt', 'w') as file:json.dump({"operation":"buy",
         #                                                   "ticker":ticker,
@@ -328,6 +348,7 @@ class TradingHelper:
         #                                                   file, indent=1)
         return order
     
+    @check_rate_limit
     def cancel_order_if_still_open(self,mail,order_number):
         start_time=time.time()
         max_duration = 5  # 5 minutes in seconds
@@ -346,12 +367,14 @@ class TradingHelper:
                 pass
             if order_status == "EXECUTED":
                 return {"Success": "EXECUTED"}#"Order executed in the market!"
-            
+    
+    @check_rate_limit
     def check_order_status(self,mail,order_number):
         app=self.get_cocos_app_instance(mail=mail)
         order_status=app.order_status(order_number)
         return order_status["status"]
     
+    @check_rate_limit
     def place_sell_order(self,mail,ticker,quantity,price,term,currency):
         quantity=str(quantity)
         price=str(price)
@@ -379,11 +402,13 @@ class TradingHelper:
         #                                            file, indent=1)
         return order
     
+    @check_rate_limit
     def cancel_order(self,mail,order_number):
         app = self.get_cocos_app_instance(mail=mail)
         cancel=app.cancel_order(order_number=order_number)
         return cancel
     
+    @check_rate_limit
     def get_snapshot(self,mail,ticker):
         try:
             app= self.get_cocos_app_instance(mail=mail)
@@ -450,6 +475,7 @@ class TradingHelper:
                             print(f"Error processing {ticker}: {e}")
                 count += 1
 
+    @check_rate_limit
     def get_cocos_prices(self,mail,tickers=None,box_position=0,timer=None):
         app = self.get_cocos_app_instance(mail=mail)
         count=self.latest_count()
@@ -492,6 +518,7 @@ class TradingHelper:
                 count=count+1
                 if timer: time.sleep(timer)
 
+    @check_rate_limit
     def funds(self,mail):
         """
         Devuelve un diccionario con el formato 
@@ -508,6 +535,7 @@ class TradingHelper:
                 funds=app.funds_available()
                 return funds
     
+    @check_rate_limit
     def portfolio(self, mail):
         try:
             app = self.get_cocos_app_instance(mail=mail)
@@ -516,9 +544,10 @@ class TradingHelper:
                 logging.warning(f"Error {e} en portfolio. Intentando refrescar token y re-instanciar.")
                 app._refresh_access_token()
                 app = self.get_cocos_app_instance(mail=mail)
-            else: raise f"error distinto a MFA en Portfolio: {e}"
+            else: raise RuntimeError(f"error distinto a MFA en Portfolio: {e}")
         return app.my_portfolio()
     
+    @check_rate_limit
     def stocks_available(self,mail,ticker,term,currency):
         app = self.get_cocos_app_instance(mail=mail)
         if term == "CI": settlement = app.settlements.T0
