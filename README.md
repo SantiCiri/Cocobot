@@ -11,6 +11,7 @@ Las operaciones se basan en el monitoreo de precios, detección de oportunidades
 - Soporta logging por archivo para cada estrategia o script ejecutado.
 - Emite alertas sonoras cuando se detectan oportunidades.
 - Cuando se detecta una oportunidad de arbitraje, opera automaticamente
+- Puede integrarse a la api de Windscribe para operar desde alli.
 
 ---
 
@@ -26,6 +27,7 @@ CLAVE_PRIVADA_PPI=...
 CLAVE_POSGRES=...
 
 Ejemplo para guardar ofertas y demandas durante el horario de mercado. Escribir en terminal: python operar_precios.py
+Para que el bot opere automaticamente todos los dias, editar la propuesta en el archivo crontab segun el directorio que corresponda
 
 ---
 
