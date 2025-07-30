@@ -1,48 +1,50 @@
-# Trading Automático con Bonos en Cocos
+# Automated Asset Trading on Cocos
 
-Este repositorio esta creado sobre pycocos. Contiene un conjunto de scripts en Python para operar automáticamente bonos del mercado argentino utilizando la API de **Cocos Capital**. Aparte consigue vaores de caja desde **PPI**. 
-Las operaciones se basan en el monitoreo de precios, detección de oportunidades de arbitraje, y ejecución de órdenes de compra/venta en tiempo real.
-
- 🧠 ¿Qué hace este sistema?
-
-- Extrae precios en tiempo real de múltiples activos utilizando la API de Cocos.
-- Guarda los datos en una base de datos PostgreSQL para análisis y backtesting.
-- Ejecuta estrategias de trading automático (por ejemplo, arbitraje de ratios).
-- Soporta logging por archivo para cada estrategia o script ejecutado.
-- Emite alertas sonoras cuando se detectan oportunidades.
-- Cuando se detecta una oportunidad de arbitraje, opera automaticamente
-- Puede integrarse a la api de Windscribe para operar desde alli.
+This repository is built upon [pyCocos](https://github.com/nacho-herrera/pyCocos).  
+It includes a set of Python scripts designed to automatically trade Argentine bonds using the **Cocos Capital** API, and retrieve reference prices from **PPI**.  
+The system operates by monitoring prices, detecting arbitrage opportunities, and executing buy/sell orders in real time.
 
 ---
 
- ⚙️ Requisitos
+🧠 What does this system do?
+
+- Fetches real-time prices for multiple assets using the Cocos API.
+- Stores market data in a PostgreSQL database for analysis and backtesting.
+- Executes automated trading strategies (e.g., ratio arbitrage).
+- Supports per-script logging to separate files.
+- Emits sound alerts when opportunities are detected.
+- Automatically executes trades when an arbitrage opportunity arises.
+- Can be integrated with the Windscribe API for IP rotation or remote access.
+
+---
+
+⚙️ Requirements
 
 - Python ≥ 3.8
-- PostgreSQL (base de datos `prices`)
-- `.env` con las claves necesarias:
+- PostgreSQL (with a `prices` database)
+- A `.env` file with the following keys:
 
 CLAVE_SECRETA_COCOS=...
 CLAVE_PUBLICA_PPI=...
 CLAVE_PRIVADA_PPI=...
 CLAVE_POSGRES=...
 
-Ejemplo para guardar ofertas y demandas durante el horario de mercado. Escribir en terminal: python operar_precios.py
-Para que el bot opere automaticamente todos los dias, editar la propuesta en el archivo crontab segun el directorio que corresponda
+To save market data during trading hours, simply run:
+```bash python operar_precios.py```
 
----
+To automate daily trading, add the appropriate command to your crontab, adjusting for your local file path.
 
-🛠️ Funcionalidades destacadas
+🛠️ Key Features
 
-- Sistema multihilo para lectura de precios en paralelo.
-- Recuperación automática ante errores de token (401).
-- Cálculo dinámico de ratio mínimo usando función calculate_daily_rate().
-- Logging individual por estrategia.
-- Alerta sonora configurable ante oportunidades de trading (auto_beep()).
+- Multithreaded system for concurrent price fetching.
+- Automatic recovery from token errors (401).
+- Dynamic minimum-ratio threshold using the calculate_daily_rate() function.
+- Per-strategy logging.
+- Configurable sound alerts for trading opportunities (auto_beep()).
 
----
+🧾 Additional Notes
 
-🧾 Notas adicionales
+- Order logic is designed to minimize volume and reduce slippage risk.
+- Execution is restricted to the Argentine market hours (11:00 to 17:00).
 
-- La lógica de órdenes está pensada para operar volúmenes mínimos y evitar slippage.
-- La ejecución está restringida a horario de mercado argentino (11 a 17 hs).
-- La base de datos almacena históricos con timestamps y count incremental por ronda.
+
