@@ -1,6 +1,6 @@
 # Trading Automático con Bonos en Cocos
 
-Este repositorio contiene un conjunto de scripts en Python para operar automáticamente bonos del mercado argentino utilizando la API de **Cocos Capital**. Aparte consigue vaores de caja desde **PPI**. 
+Este repositorio esta creado sobre pycocos. Contiene un conjunto de scripts en Python para operar automáticamente bonos del mercado argentino utilizando la API de **Cocos Capital**. Aparte consigue vaores de caja desde **PPI**. 
 Las operaciones se basan en el monitoreo de precios, detección de oportunidades de arbitraje, y ejecución de órdenes de compra/venta en tiempo real.
 
  🧠 ¿Qué hace este sistema?
